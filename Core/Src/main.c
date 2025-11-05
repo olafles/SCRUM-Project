@@ -837,6 +837,14 @@ void drawWalls(void) {
 	}
 }
 
+if (visitedFields[pacmanPos.row][pacmanPos.col]==0){
+	visitedFields[pacmanPos.row][pacmanPos.col]=1;
+}
+
+gameBoard[pacmanPos.row][pacmanPos.col]=1;
+myDrawFullCircle(SQ_SIZE*pacmanPos.col+SQ_SIZE/2,SQ_SIZE*pacmanPos.row+SQ_SIZE/2-1, LCD_COLOR_YELLOW);
+if (livesLeft==0) {gameStatus = 0; gameOver();}
+
 void quickRestart(void) {
 	// Zresetuj stan gry (bez inicjalizacji HAL/ekranów/joysticka)
 	pointsCounter = 0;
