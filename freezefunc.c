@@ -49,7 +49,8 @@ typedef struct {
 _Bool isFrozen = 0;
 // --- A3: Wejscie z debounce + auto-repeat (polling) ---
 typedef enum { DIR_NONE=0, DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT } Dir;
-
+#define ThresholdHigh 200
+#define ThresholdLow 37
 #define BTN_DEBOUNCE_MS       20U    // filtr drgaĹ„ stykĂłw
 #define BTN_REPEAT_DELAY_MS  160U    // po tyle ms pierwszy powtĂłrzony krok
 #define BTN_REPEAT_MS         80U    // odstÄ™p kolejnych krokĂłw przy trzymaniu
@@ -190,13 +191,60 @@ uint8_t gameStatus = 1;
 void SystemClock_Config(void);
 static inline void DoMove(Dir d);
 static void HandleInput(uint32_t now_ms);
+static Dir GetDirection(void);
 
+static Dir GetDirection(void)
+{
+    int16_t buffer[3] = {0};
+    int16_t xval, yval = 0x00;
+
+    /* Read Acceleration */
+    BSP_ACCELERO_GetXYZ(buffer);
+
+    /* Update x and y values */
+    xval = buffer[0];
+    yval = buffer[1];
+
+    /* Determine direction based on x and y accelerations */
+    if (xval > yval)
+    {
+        if (xval > ThresholdHigh)
+        {
+            return DIR_LEFT;   // Accelerating more on X-axis than Y (Left direction)
+        }
+        else if (xval < ThresholdLow)
+        {
+            return DIR_NONE;   // No significant acceleration on X-axis
+        }
+        else
+        {
+            return DIR_UP;     // Accelerating more on Y-axis (Up direction)
+        }
+    }
+    else
+    {
+        if (yval < ThresholdLow)
+        {
+            return DIR_NONE;   // No significant acceleration on Y-axis
+        }
+        else if (yval > ThresholdHigh)
+        {
+            return DIR_RIGHT;  // Accelerating more on Y-axis (Right direction)
+        }
+        else
+        {
+            return DIR_DOWN;   // Accelerating more on X-axis (Down direction)
+        }
+    }
+}
 
 /* USER CODE BEGIN PFP */
 void myRedLedInit(void);
 void myLowLevelRedLedInit(void);
 int8_t myAdc1Init(void);
 uint32_t getSeedValue(void);
+uint32_t freezeTime = 0;
+uint32_t freezeDuration = 1000;
 void gameSetup(void);
 void moveDown(void);
 void moveUp(void);
@@ -329,7 +377,7 @@ int main(void) {
 	  }
 
 	  // 6) FREEZE
-	  if (BSP_PB_GetState(BUTTON_KEY) == GPIO_PIN_SET){
+	  if (BSP_PB_GetState(BUTTON_KEY) != 1){
 	              isFrozen = 1;
 	      }
 	}
@@ -629,18 +677,23 @@ void moveRight(void) {
 }
 
 void freeze(void) {
-
+	if(isFrozen) return;
 	isFrozen = 1;
-	// Draw Pac-Man in its new position:
-	myDrawFullCircle(SQ_SIZE*pacmanPos.col+SQ_SIZE/2, SQ_SIZE*pacmanPos.row+SQ_SIZE/2, SQ_SIZE/2 - 1,
-				 LCD_COLOR_BLUE);
+	freezeTime = HAL_GetTick();
 }
 
 
 void movePinky(void) {
 	if (isFrozen == 1){
-		HAL_Delay(1000);
-		isFrozen=0;
+		if (HAL_GetTick() - freezeTime >= freezeDuration) {
+			myDrawFullRectangle(pinkyPos.col*SQ_SIZE+1, pinkyPos.row*SQ_SIZE+1,
+					   SQ_SIZE-1, SQ_SIZE-1, LCD_COLOR_LIGHTCYAN);
+		            isFrozen = 0; // Odblokuj Pinky
+		}
+		else {
+		            // Pinky jest wciąż zamrożona, nie ruszamy jej
+		            return;
+		}
 	}
 	else {
 	int8_t distanceRows = (int8_t)pinkyPos.row - (int8_t)pacmanPos.row;
@@ -812,6 +865,7 @@ void gameOver(void) {
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_PIN) {
   if (GPIO_PIN == IOE_IT_PIN) {
     JoyState = BSP_JOY_GetState();   // DODAJ TO
+    Dir direction = GetDirection();
     switch (JoyState) {
       case JOY_DOWN:  moveDown();  break;
       case JOY_UP:    moveUp();    break;
@@ -856,4 +910,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
