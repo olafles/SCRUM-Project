@@ -1,0 +1,141 @@
+Great! If you want to use the accelerometer data instead of the joystick, you're on the right track with your `GetDirection()` function. You just need to make sure that the accelerometer readings are properly filtered, mapped to the correct game controls (up, down, left, right), and then ensure that the rest of your game logic uses the accelerometer for movement.
+
+I'll walk you through a few important steps:
+
+### 1. **Smoothing Accelerometer Data**
+
+Since raw accelerometer data can be noisy, applying a simple low-pass filter can help make the movements smoother. This is especially important to avoid unintended jerks or movements.
+
+### 2. **Mapping Acceleration to Movement**
+
+You need to map the accelerometer's X and Y axes to directions (up, down, left, right). Since accelerometers usually detect a range of values, you can define thresholds to determine when a significant movement occurs.
+
+### 3. **Using Accelerometer Data for Movement**
+
+You'll modify your game loop to use accelerometer data for movement rather than the joystick input.
+
+---
+
+### Full Solution (Modified Code):
+
+#### 1. **Filtering Accelerometer Data**
+
+Let's start by smoothing the accelerometer data using a low-pass filter. The filter will help reduce noise and make the movement more stable.
+
+```c
+// Low-pass filter for accelerometer data smoothing
+#define ALPHA 0.1f  // Smoothing factor, adjust as needed (lower = smoother)
+int16_t smoothedX = 0, smoothedY = 0;
+
+static Dir GetDirection(void) {
+    int16_t buffer[3] = {0};
+    int16_t xval, yval = 0x00;
+
+    // Read the accelerometer data
+    BSP_ACCELERO_GetXYZ(buffer);
+
+    // Apply the low-pass filter to smooth out accelerometer values
+    xval = (int16_t)(ALPHA * buffer[0] + (1.0f - ALPHA) * smoothedX);
+    yval = (int16_t)(ALPHA * buffer[1] + (1.0f - ALPHA) * smoothedY);
+
+    // Update smoothed values
+    smoothedX = xval;
+    smoothedY = yval;
+
+    // Define thresholds for detecting significant movement
+    if (xval > yval) {
+        // Horizontal movement is more significant than vertical
+        if (xval > ThresholdHigh) {
+            return DIR_LEFT;   // Left direction
+        } else if (xval < ThresholdLow) {
+            return DIR_NONE;   // No movement
+        } else {
+            return DIR_UP;     // Vertical movement is stronger (Up direction)
+        }
+    } else {
+        // Vertical movement is more significant than horizontal
+        if (yval < ThresholdLow) {
+            return DIR_NONE;   // No movement
+        } else if (yval > ThresholdHigh) {
+            return DIR_RIGHT;  // Right direction
+        } else {
+            return DIR_DOWN;   // Down direction
+        }
+    }
+}
+```
+
+#### 2. **Integrating `GetDirection()` in Your Game Loop**
+
+Once the accelerometer is smoothed and the direction is calculated, use this direction to control Pac-Man's movement. You'll modify your game loop to call `GetDirection()` instead of using joystick inputs.
+
+Here’s how you can update your game loop to use the accelerometer:
+
+```c
+void gameLoop(void) {
+    uint32_t frame_start = HAL_GetTick();
+
+    // 1) Get accelerometer direction
+    Dir direction = GetDirection();
+
+    // 2) If a valid direction is detected, move Pac-Man
+    if (direction != DIR_NONE) {
+        DoMove(direction);  // Move Pac-Man in the detected direction
+    }
+
+    // 3) Wait for next frame to maintain the game loop at a stable rate
+    uint32_t now_ms = HAL_GetTick();
+    uint32_t elapsed = now_ms - frame_start;
+    if (elapsed < FRAME_MS_TARGET) {
+        HAL_Delay(FRAME_MS_TARGET - elapsed);
+    }
+
+    // Additional game logic, AI for Pinky, freeze conditions, etc.
+    pinky_timer_ms += g_frame_ms;
+    while (pinky_timer_ms >= 500U) {
+        movePinky();
+        pinky_timer_ms -= 500U;
+    }
+
+    // Check for game-over conditions
+    if (pointsCounter == NROW * NCOL) {
+        gameStatus = 2;  // Pac-Man wins
+        gameOver();
+    }
+    if ((pinkyPos.row == pacmanPos.row) && (pinkyPos.col == pacmanPos.col)) {
+        gameStatus = 0;  // Pinky wins
+        gameOver();
+    }
+}
+```
+
+#### 3. **Adjust Thresholds for Movement**
+
+You'll need to define reasonable values for `ThresholdHigh` and `ThresholdLow` based on how sensitive you want the controls to be.
+
+* **ThresholdHigh**: When the accelerometer detects a value above this threshold, it indicates a "strong" movement in that direction (up, down, left, or right).
+* **ThresholdLow**: When the value falls below this threshold, it indicates that there’s no significant movement in that direction, and Pac-Man should stop moving.
+
+For example:
+
+```c
+#define ThresholdHigh  1000  // Adjust for the level of acceleration
+#define ThresholdLow   100   // Minimum acceleration to register as movement
+```
+
+### 4. **Tuning the Game Loop**
+
+Since the accelerometer is continuously giving new readings, it’s important to make sure that movements are not too rapid or jerky. Using a small delay between frames (as you are already doing with `HAL_Delay`) is a good strategy, but you might need to adjust `ThresholdHigh` and `ThresholdLow` to make the controls feel more responsive or natural.
+
+---
+
+### 5. **Additional Enhancements**
+
+* **Dead Zones**: You might want to introduce a "dead zone" in your accelerometer readings so that small, unintended tilts don’t result in movement.
+* **Sensitivity Adjustment**: You could make the sensitivity of the controls adjustable (e.g., by modifying the `ALPHA` filter or the thresholds) to suit different play styles.
+
+### Conclusion:
+
+By filtering the accelerometer data and mapping it to the appropriate movement directions (up, down, left, right), you've effectively removed the joystick input and are using the accelerometer as the main control. The game loop now moves Pac-Man based on the device’s tilt, which should provide an immersive and intuitive control scheme.
+
+Feel free to test the controls and adjust the thresholds and filter values to fine-tune the game’s responsiveness!
